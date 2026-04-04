@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Ticket Copilot</title>
+    <link rel="stylesheet" href="app.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Zendesk Ticket Copilot</p>
+          <h1>Ask AI without leaving the ticket.</h1>
+        </div>
+        <p class="hero__note">
+          Suggestions stay in this sidebar until an agent chooses to copy them. Nothing is sent to the customer automatically.
+        </p>
+      </header>
+
+      <section class="shortcut-panel" aria-label="Shortcut actions">
+        <button class="shortcut" data-shortcut="summarize" type="button">Summarize</button>
+        <button class="shortcut" data-shortcut="draft_reply" type="button">Draft reply</button>
+        <button class="shortcut" data-shortcut="next_steps" type="button">Next steps</button>
+      </section>
+
+      <section id="status" class="status status--neutral" aria-live="polite">
+        Loading ticket context...
+      </section>
+
+      <section id="messages" class="messages" aria-live="polite">
+        <div class="empty-state">
+          <h2>Ready when you are</h2>
+          <p>Use a shortcut or type a custom prompt to work with the current ticket context.</p>
+        </div>
+      </section>
+
+      <form id="composer" class="composer">
+        <label class="composer__label" for="prompt">Prompt</label>
+        <textarea
+          id="prompt"
+          name="prompt"
+          rows="5"
+          placeholder="Example: Draft a calm reply that asks for the missing order number."
+        ></textarea>
+
+        <div class="composer__actions">
+          <button id="refresh-context" class="button button--ghost" type="button">Refresh context</button>
+          <button id="send" class="button button--primary" type="submit">Send</button>
+        </div>
+      </form>
+    </main>
+
+    <script src="https://static.zdassets.com/zendesk_app_framework_sdk/2.0/zaf_sdk.min.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
+

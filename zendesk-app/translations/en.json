@@ -1,0 +1,23 @@
+{
+  "app": {
+    "name": "AI Ticket Copilot",
+    "short_description": "Agent-side AI chat for ticket summaries, drafts, and next steps.",
+    "long_description": "AI Ticket Copilot adds an internal Zendesk sidebar assistant for support agents. It reads the current ticket context, sends the agent's prompt plus the ticket details to your backend, and returns AI suggestions without ever auto-sending a reply to the customer.",
+    "installation_instructions": "Deploy the backend first, then install this app and provide the backend origin, backend hostname, and shared secret. The shared secret must match the BACKEND_SHARED_SECRET value in the backend environment.",
+    "parameters": {
+      "backend_origin": {
+        "label": "Backend origin",
+        "helpText": "Full HTTPS origin for the backend, for example `https://ai-support.example.com`."
+      },
+      "backend_domain": {
+        "label": "Backend domain",
+        "helpText": "Hostname only for the backend, for example `ai-support.example.com`. This is used for Zendesk's domain whitelist."
+      },
+      "backend_api_key": {
+        "label": "Backend shared secret",
+        "helpText": "Secure value used in the `Authorization` header when the app calls your backend. It must match `BACKEND_SHARED_SECRET` on the backend."
+      }
+    }
+  }
+}
+
