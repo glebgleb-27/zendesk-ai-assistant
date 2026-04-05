@@ -37,6 +37,7 @@ const chatRequestSchema = z.object({
     viaChannel: z.string().optional(),
     requester: z
       .object({
+        id: z.number().nullable().optional(),
         name: z.string().optional(),
         email: z.string().optional()
       })
@@ -53,7 +54,19 @@ const chatRequestSchema = z.object({
       .optional(),
     draftComment: z.string().optional(),
     draftCommentType: z.string().optional(),
-    conversation: z.array(ticketConversationItemSchema).optional()
+    conversation: z.array(ticketConversationItemSchema).optional(),
+    customFields: z
+      .array(
+        z.object({
+          id: z.number().nullable().optional(),
+          name: z.string().optional(),
+          label: z.string().optional(),
+          type: z.string().optional(),
+          value: z.unknown().optional(),
+          valueLabel: z.string().optional()
+        })
+      )
+      .optional()
   }),
   metadata: z
     .object({
@@ -97,4 +110,3 @@ router.post("/chat", async (req, res, next) => {
 });
 
 export { router as chatRouter };
-

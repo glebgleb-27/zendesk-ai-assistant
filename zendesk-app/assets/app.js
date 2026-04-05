@@ -22,23 +22,29 @@ const state = {
   messages: [],
   pending: false,
   settings: null,
-  ticket: null
+  ticket: null,
+  boundEvents: new Set(),
+  backendAvailable: false,
+  backendModeMessage: ""
 };
 
 const elements = {
   composer: document.getElementById("composer"),
   messages: document.getElementById("messages"),
+  modeBadge: document.getElementById("mode-badge"),
   prompt: document.getElementById("prompt"),
   refreshContext: document.getElementById("refresh-context"),
   send: document.getElementById("send"),
   shortcuts: Array.from(document.querySelectorAll("[data-shortcut]")),
-  status: document.getElementById("status")
+  status: document.getElementById("status"),
+  statusText: document.getElementById("status-text")
 };
 
 document.addEventListener("DOMContentLoaded", init);
 
 async function init() {
   bindEvents();
+  bindBaseTicketEvents();
   renderMessages();
   resizeApp();
 
@@ -83,19 +89,27 @@ function bindEvents() {
 
 async function loadSettings() {
   const metadata = await client.metadata();
-  state.settings = metadata.settings || {};
+  state.settings = {
+    backend_origin: String(metadata.settings?.backend_origin || "").trim(),
+    backend_domain: String(metadata.settings?.backend_domain || "").trim()
+  };
 
-  if (!state.settings.backend_origin) {
-    throw new Error("Missing Zendesk app setting: backend_origin");
-  }
+  const backendMode = getBackendMode(state.settings);
+  state.backendAvailable = backendMode.available;
+  state.backendModeMessage = backendMode.message;
 
-  if (!state.settings.backend_domain) {
-    throw new Error("Missing Zendesk app setting: backend_domain");
-  }
+  syncModeUi();
+  updateUiState();
+  renderMessages();
 }
 
 async function handleSend({ action, label, prompt }) {
   const trimmedPrompt = String(prompt || "").trim();
+
+  if (!state.backendAvailable) {
+    setStatus(state.backendModeMessage || "Preview mode keeps AI actions offline until a backend is configured.", "neutral");
+    return;
+  }
 
   if (!trimmedPrompt || state.pending) {
     return;
@@ -187,6 +201,7 @@ async function refreshTicketContext({ announce }) {
     "ticket.type",
     "ticket.tags",
     "ticket.via.channel",
+    "ticket.requester.id",
     "ticket.requester.name",
     "ticket.requester.email",
     "ticket.assignee.user.name",
@@ -195,6 +210,8 @@ async function refreshTicketContext({ announce }) {
     "comment.type",
     "ticket.conversation"
   ]);
+
+  const customFields = await loadCustomFields();
 
   const ticket = {
     id: toNumber(ticketBase["ticket.id"]),
@@ -206,6 +223,7 @@ async function refreshTicketContext({ announce }) {
     tags: Array.isArray(ticketBase["ticket.tags"]) ? ticketBase["ticket.tags"] : [],
     viaChannel: ticketBase["ticket.via.channel"] || "",
     requester: {
+      id: toNumber(ticketBase["ticket.requester.id"]),
       name: ticketBase["ticket.requester.name"] || "",
       email: ticketBase["ticket.requester.email"] || ""
     },
@@ -217,7 +235,8 @@ async function refreshTicketContext({ announce }) {
     },
     draftComment: ticketBase["ticket.comment.text"] || "",
     draftCommentType: ticketBase["comment.type"] || "",
-    conversation: normalizeConversation(ticketBase["ticket.conversation"])
+    conversation: normalizeConversation(ticketBase["ticket.conversation"]),
+    customFields
   };
 
   if ((!ticket.conversation || ticket.conversation.length === 0) && ticket.id) {
@@ -225,9 +244,14 @@ async function refreshTicketContext({ announce }) {
   }
 
   state.ticket = ticket;
+  bindCustomFieldEvents(customFields);
 
   if (announce) {
-    setStatus(`Ticket context refreshed${ticket.id ? ` for #${ticket.id}` : ""}.`, "success");
+    const message = state.backendAvailable
+      ? `Ticket${ticket.id ? ` #${ticket.id}` : ""} is synced and ready for AI.`
+      : `Ticket${ticket.id ? ` #${ticket.id}` : ""} is synced. Preview mode keeps AI actions offline until a backend is connected.`;
+
+    setStatus(message, state.backendAvailable ? "success" : "neutral");
   }
 
   resizeApp();
@@ -290,6 +314,140 @@ function normalizeConversation(value) {
     .filter((item) => item.text);
 }
 
+function bindBaseTicketEvents() {
+  const events = [
+    "ticket.subject.changed",
+    "ticket.description.changed",
+    "ticket.requester.id.changed",
+    "ticket.requester.name.changed",
+    "ticket.requester.email.changed",
+    "ticket.tags.changed"
+  ];
+
+  events.forEach((eventName) => {
+    bindTicketRefreshEvent(eventName);
+  });
+}
+
+function bindCustomFieldEvents(customFields) {
+  customFields.forEach((field) => {
+    if (!field.name) {
+      return;
+    }
+
+    bindTicketRefreshEvent(`ticket.${field.name}.changed`);
+  });
+}
+
+function bindTicketRefreshEvent(eventName) {
+  if (state.boundEvents.has(eventName)) {
+    return;
+  }
+
+  state.boundEvents.add(eventName);
+  client.on(eventName, () => {
+    refreshTicketContext({ announce: false }).catch(() => {
+      setStatus("Could not refresh ticket context automatically.", "error");
+    });
+  });
+}
+
+async function loadCustomFields() {
+  const fieldResponse = await client.get("ticketFields").catch(() => ({}));
+  const ticketFields = Array.isArray(fieldResponse.ticketFields) ? fieldResponse.ticketFields : [];
+  const customFieldDefinitions = ticketFields.filter((field) => {
+    return typeof field?.name === "string" && field.name.startsWith("custom_field_");
+  });
+
+  if (customFieldDefinitions.length === 0) {
+    return [];
+  }
+
+  const valueResponse = await safeGetMany(
+    customFieldDefinitions.map((field) => `ticket.customField:${field.name}`)
+  );
+
+  return customFieldDefinitions.map((field) => {
+    const key = `ticket.customField:${field.name}`;
+    const rawValue = valueResponse[key];
+    const parsedId = field.name.replace("custom_field_", "");
+
+    return {
+      id: toNumber(parsedId),
+      name: field.name,
+      label: field.label || field.name,
+      type: field.type || "",
+      value: normalizeCustomFieldValue(rawValue, field.optionValues),
+      valueLabel: formatCustomFieldValue(rawValue, field.optionValues)
+    };
+  });
+}
+
+function normalizeCustomFieldValue(value, optionValues) {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeCustomFieldValue(item, optionValues));
+  }
+
+  if (value && typeof value === "object") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    const option = findOptionValue(trimmed, optionValues);
+    return option ? option.value : trimmed;
+  }
+
+  return value;
+}
+
+function formatCustomFieldValue(value, optionValues) {
+  if (Array.isArray(value)) {
+    const labels = value
+      .map((item) => formatCustomFieldValue(item, optionValues))
+      .filter(Boolean);
+
+    return labels.join(", ");
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+
+    if (!trimmed) {
+      return "";
+    }
+
+    const option = findOptionValue(trimmed, optionValues);
+    return option ? option.label || option.value || trimmed : trimmed;
+  }
+
+  if (typeof value === "boolean") {
+    return value ? "Yes" : "No";
+  }
+
+  if (typeof value === "number") {
+    return String(value);
+  }
+
+  if (value && typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch (_error) {
+      return String(value);
+    }
+  }
+
+  return "";
+}
+
+function findOptionValue(value, optionValues) {
+  if (!Array.isArray(optionValues)) {
+    return null;
+  }
+
+  return optionValues.find((option) => option && option.value === value) || null;
+}
+
 function renderMessages() {
   elements.messages.replaceChildren();
 
@@ -297,13 +455,19 @@ function renderMessages() {
     const empty = document.createElement("div");
     empty.className = "empty-state";
 
+    const eyebrow = document.createElement("p");
+    eyebrow.className = "empty-state__eyebrow";
+    eyebrow.textContent = "AI Output";
+
     const heading = document.createElement("h2");
-    heading.textContent = "Ready when you are";
+    heading.textContent = state.backendAvailable ? "Ask Copilot anything" : "Preview mode is ready";
 
     const copy = document.createElement("p");
-    copy.textContent = "Use a shortcut or type a custom prompt to work with the current ticket context.";
+    copy.textContent = state.backendAvailable
+      ? "Use a quick action or ask a custom question about the current ticket."
+      : "Ticket context is already attached behind the scenes. Connect a backend to unlock summaries, drafted replies, and follow-up guidance.";
 
-    empty.append(heading, copy);
+    empty.append(eyebrow, heading, copy);
     elements.messages.append(empty);
     resizeApp();
     return;
@@ -346,16 +510,18 @@ function renderMessages() {
 }
 
 function updateUiState() {
-  elements.send.disabled = state.pending;
+  elements.send.disabled = state.pending || !state.backendAvailable;
+  elements.prompt.disabled = state.pending || !state.backendAvailable;
   elements.refreshContext.disabled = state.pending;
+
   elements.shortcuts.forEach((button) => {
-    button.disabled = state.pending;
+    button.disabled = state.pending || !state.backendAvailable;
   });
 }
 
 function setStatus(message, tone) {
   elements.status.className = `status status--${tone}`;
-  elements.status.textContent = message;
+  elements.statusText.textContent = message;
   resizeApp();
 }
 
@@ -421,6 +587,65 @@ function getErrorMessage(error) {
   }
 
   return "Something went wrong.";
+}
+
+function syncModeUi() {
+  elements.modeBadge.className = `mode-badge mode-badge--${state.backendAvailable ? "live" : "preview"}`;
+  elements.modeBadge.textContent = state.backendAvailable ? "Live" : "Preview";
+
+  if (state.backendAvailable) {
+    elements.prompt.placeholder =
+      'Ask a question or try a prompt like "draft a calm reply that asks for the order number."';
+    return;
+  }
+
+  elements.prompt.value = "";
+  elements.prompt.placeholder = "Preview mode keeps AI disabled. Connect a backend to ask Copilot questions here.";
+}
+
+function getBackendMode(settings) {
+  const origin = String(settings?.backend_origin || "").trim();
+  const domain = String(settings?.backend_domain || "").trim().toLowerCase();
+
+  if (!origin || !domain) {
+    return {
+      available: false,
+      message: "Preview mode: ticket context works even without backend settings, but AI actions are disabled."
+    };
+  }
+
+  let parsedOrigin;
+
+  try {
+    parsedOrigin = new URL(origin);
+  } catch (_error) {
+    return {
+      available: false,
+      message: "Preview mode: backend_origin is not a valid URL, so AI actions are disabled."
+    };
+  }
+
+  const originHost = parsedOrigin.hostname.toLowerCase();
+  const placeholderHosts = new Set(["example.com", "www.example.com"]);
+
+  if (placeholderHosts.has(originHost) || placeholderHosts.has(domain)) {
+    return {
+      available: false,
+      message: "Preview mode: placeholder backend settings are in use, so only ticket context is available."
+    };
+  }
+
+  if (originHost !== domain) {
+    return {
+      available: false,
+      message: "Preview mode: backend_origin and backend_domain do not match, so AI actions are disabled."
+    };
+  }
+
+  return {
+    available: true,
+    message: ""
+  };
 }
 
 function resizeApp() {

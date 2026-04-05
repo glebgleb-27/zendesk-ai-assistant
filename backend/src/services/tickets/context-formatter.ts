@@ -21,10 +21,22 @@ export function formatTicketContext(ticket: TicketContext): string {
   sections.push(`Priority: ${ticket.priority || "not set"}`);
   sections.push(`Type: ${ticket.type || "not set"}`);
   sections.push(`Channel: ${ticket.viaChannel || "not available"}`);
-  sections.push(`Requester: ${ticket.requester?.name || "unknown"} (${ticket.requester?.email || "email unavailable"})`);
+  sections.push(
+    `Requester: ${ticket.requester?.name || "unknown"} (${ticket.requester?.email || "email unavailable"})${ticket.requester?.id ? ` [id: ${ticket.requester.id}]` : ""}`
+  );
   sections.push(`Assignee: ${ticket.assignee?.name || "unassigned"}`);
   sections.push(`Organization: ${ticket.organization?.name || "not available"}`);
   sections.push(`Tags: ${ticket.tags && ticket.tags.length > 0 ? ticket.tags.join(", ") : "none"}`);
+
+  if (ticket.customFields && ticket.customFields.length > 0) {
+    const populatedCustomFields = ticket.customFields
+      .filter((field) => hasMeaningfulValue(field.value))
+      .map((field) => `${field.label || field.name || "custom field"}: ${formatCustomFieldValue(field.valueLabel, field.value)}`);
+
+    if (populatedCustomFields.length > 0) {
+      sections.push(`Custom fields:\n${populatedCustomFields.join("\n")}`);
+    }
+  }
 
   if (ticket.description) {
     sections.push(`Description:\n${truncate(ticket.description, 3000)}`);
@@ -56,6 +68,50 @@ export function formatTicketContext(ticket: TicketContext): string {
   return sections.join("\n\n");
 }
 
+function hasMeaningfulValue(value: unknown): boolean {
+  if (typeof value === "boolean") {
+    return true;
+  }
+
+  if (typeof value === "number") {
+    return Number.isFinite(value);
+  }
+
+  if (typeof value === "string") {
+    return value.trim().length > 0;
+  }
+
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+
+  if (value && typeof value === "object") {
+    return Object.keys(value as Record<string, unknown>).length > 0;
+  }
+
+  return false;
+}
+
+function formatCustomFieldValue(preferredLabel: string | undefined, value: unknown): string {
+  if (preferredLabel && preferredLabel.trim()) {
+    return preferredLabel;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => formatCustomFieldValue(undefined, item)).join(", ");
+  }
+
+  if (typeof value === "boolean") {
+    return value ? "Yes" : "No";
+  }
+
+  if (value && typeof value === "object") {
+    return JSON.stringify(value);
+  }
+
+  return String(value ?? "empty");
+}
+
 export function formatSidebarConversation(conversation: SidebarMessage[]): string {
   if (conversation.length === 0) {
     return "No prior sidebar conversation.";
@@ -66,4 +122,3 @@ export function formatSidebarConversation(conversation: SidebarMessage[]): strin
     .map((message, index) => `${index + 1}. ${message.role.toUpperCase()}: ${truncate(message.content, 2000)}`)
     .join("\n");
 }
-

@@ -24,6 +24,7 @@ export interface TicketContext {
   tags?: string[];
   viaChannel?: string;
   requester?: {
+    id?: number | null;
     name?: string;
     email?: string;
   };
@@ -36,6 +37,14 @@ export interface TicketContext {
   draftComment?: string;
   draftCommentType?: string;
   conversation?: TicketConversationItem[];
+  customFields?: Array<{
+    id?: number | null;
+    name?: string;
+    label?: string;
+    type?: string;
+    value?: unknown;
+    valueLabel?: string;
+  }>;
 }
 
 export interface ChatRequestBody {
@@ -55,4 +64,3 @@ export interface ChatResponseBody {
   model: string;
   requestId?: string;
 }
-

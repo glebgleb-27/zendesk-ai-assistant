@@ -8,14 +8,15 @@
   </head>
   <body>
     <main class="app-shell">
-      <header class="hero">
-        <div>
-          <p class="eyebrow">Zendesk Ticket Copilot!</p>
-          <h1>Ask AI without leaving the ticket.</h1>
+      <header class="topbar">
+        <div class="topbar__brand">
+          <p class="topbar__eyebrow">AI Ticket Copilot</p>
+          <div class="topbar__title-row">
+            <h1>Copilot</h1>
+            <span id="mode-badge" class="mode-badge mode-badge--preview">Preview</span>
+          </div>
         </div>
-        <p class="hero__note">
-          Suggestions stay in this sidebar until an agent chooses to copy them. Nothing is sent to the customer automatically.
-        </p>
+        <button id="refresh-context" class="toolbar-button" type="button">Refresh</button>
       </header>
 
       <section class="shortcut-panel" aria-label="Shortcut actions">
@@ -25,28 +26,35 @@
       </section>
 
       <section id="status" class="status status--neutral" aria-live="polite">
-        Loading ticket context...
+        <span class="status__dot" aria-hidden="true"></span>
+        <span id="status-text">Loading ticket context...</span>
       </section>
 
       <section id="messages" class="messages" aria-live="polite">
         <div class="empty-state">
+          <p class="empty-state__eyebrow">AI Output</p>
           <h2>Ready when you are</h2>
-          <p>Use a shortcut or type a custom prompt to work with the current ticket context.</p>
+          <p>Ask Copilot about the current ticket or use a shortcut when AI is connected.</p>
         </div>
       </section>
 
       <form id="composer" class="composer">
-        <label class="composer__label" for="prompt">Prompt</label>
-        <textarea
-          id="prompt"
-          name="prompt"
-          rows="5"
-          placeholder="Example: Draft a calm reply that asks for the missing order number."
-        ></textarea>
+        <div class="composer__header">
+          <label class="composer__label" for="prompt">Ask Copilot</label>
+          <p class="composer__hint">Context from the ticket is attached automatically.</p>
+        </div>
 
-        <div class="composer__actions">
-          <button id="refresh-context" class="button button--ghost" type="button">Refresh context</button>
-          <button id="send" class="button button--primary" type="submit">Send</button>
+        <div class="composer__shell">
+          <textarea
+            id="prompt"
+            name="prompt"
+            rows="4"
+            placeholder='Ask a question or try a prompt like "draft a calm reply that asks for the order number."'
+          ></textarea>
+
+          <div class="composer__actions">
+            <button id="send" class="button button--primary" type="submit">Send</button>
+          </div>
         </div>
       </form>
     </main>
@@ -55,4 +63,3 @@
     <script src="app.js"></script>
   </body>
 </html>
-
